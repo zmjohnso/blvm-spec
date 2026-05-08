@@ -39,7 +39,8 @@ This paper presents a mathematical specification of the Bitcoin consensus protoc
      - 5.2.5 [Script Verification Flags](#525-script-verification-flags)
      - 5.2.6 [Script Flag Exceptions](#526-script-flag-exceptions)
    - 5.3 [Block Validation](#53-block-validation)
-     - 5.3.1 [Transaction Application Equivalence](#531-transaction-application-equivalence)
+     - 5.3.1 [Header Validation](#531-header-validation)
+     - 5.3.2 [Transaction Application Equivalence](#532-transaction-application-equivalence)
    - 5.4 [BIP Validation Rules](#54-bip-validation-rules)
      - 5.4.1 [BIP30: Duplicate Coinbase Prevention](#541-bip30-duplicate-coinbase-prevention)
      - 5.4.2 [BIP34: Block Height in Coinbase](#542-bip34-block-height-in-coinbase)
@@ -806,16 +807,42 @@ Where $h_b = \text{hash}(b)$ is the block hash. Mainnet has 2 exceptions (BIP16,
 
 For block $b = (h, txs)$ with UTXO set $us$ at height $height$:
 
-#### 5.3.1 Transaction Application Equivalence
+#### 5.3.1 Header Validation
 
-**Theorem 5.3.1** (ApplyTransaction Equivalence): The functions `apply_transaction` and `apply_transaction_with_id` produce identical results:
+**ValidBlockHeader**: $\mathcal{H} \times \mathbb{N} \times \mathcal{C} \rightarrow \{\text{true}, \text{false}\}$
+
+`ValidBlockHeader(h, height, ctx)` is the conjunction of the following rules. The `ConnectBlock` formula above writes it as `ValidBlockHeader(h)` for brevity; in practice the block height and time context are always available.
+
+| Rule | Condition | Implementation |
+|------|-----------|----------------|
+| H01 — Minimum version | $h.\text{version} \geq 1$ | `validate_block_header` (§5.3) |
+| H02 — Height-dependent version (BIP90) | $h.\text{version} \geq \text{MinVersion}(height)$ | `check_bip90` (§5.4.4) |
+| H03 — Non-zero timestamp | $h.\text{timestamp} \neq 0$ | `validate_block_header` |
+| H04 — Timestamp within window | $h.\text{timestamp} \leq ctx.\text{network\_time} + \text{MAX\_FUTURE\_BLOCK\_TIME}$ | `validate_block_header` |
+| H05 — Timestamp above MTP (BIP113) | $h.\text{timestamp} \geq \text{MedianTimePast}(\text{recent headers})$ | `validate_block_header` |
+| H06 — Non-zero bits | $h.\text{bits} \neq 0$ | `validate_block_header` |
+| H07 — Proof of work | $\text{SHA256}(\text{SHA256}(\text{serialize}(h))) < \text{ExpandTarget}(h.\text{bits})$ | `check_proof_of_work` (§7.2) |
+| H08 — Parent hash | $h.\text{prev\_block\_hash} = \text{hash}(\text{parent header})$ | node layer (chain linkage) |
+
+$$\text{MinVersion}(height) = \begin{cases} 4 & \text{if BIP65 active at } height \\ 3 & \text{if BIP66 active at } height \\ 2 & \text{if BIP34 active at } height \\ 1 & \text{otherwise} \end{cases}$$
+
+**Notes:**
+
+- H01 and H02 compose: H01 is the unconditional floor (version 0 is always rejected); H02 enforces tighter minimums after BIP activation heights. Version 1 is valid before BIP34, invalid after.
+- H08 (parent hash linkage) is enforced by the node chain layer, not by `blvm-consensus`. Rules H01–H07 are the consensus-local subset checked inside `connect_block`.
+- Merkle root correctness is *not* part of `ValidBlockHeader`. The `bits` field check (H06) rejects an all-zero `bits` as a structural sanity check; cryptographic verification of the merkle root against the block's transaction list happens inside `connect_block` itself after header validation passes.
+- H04 and H05 require a time context (network time and recent-header MTP). When no context is available (e.g. headers-first sync), only H01, H03, H06 are enforced.
+
+#### 5.3.2 Transaction Application Equivalence
+
+**Theorem 5.3.2** (ApplyTransaction Equivalence): The functions `apply_transaction` and `apply_transaction_with_id` produce identical results:
 
 $$\forall tx \in \mathcal{TX}, us \in \mathcal{US}, h \in \mathbb{N}:$$
 $$\text{ApplyTransaction}(tx, us, h) = \text{ApplyTransactionWithId}(tx, \text{CalculateTxId}(tx), us, h)$$
 
 *Proof*: Both functions apply identical UTXO set transformations. The sole difference is the source of the transaction identifier: $\text{ApplyTransaction}$ computes $\text{CalculateTxId}(tx)$ internally, while $\text{ApplyTransactionWithId}$ accepts it as argument. The outputs are identical by structural induction on the transaction application steps.
 
-**Corollary 5.3.1.1**: Transaction application is deterministic and side-effect-free, regardless of which function is used.
+**Corollary 5.3.2.1**: Transaction application is deterministic and side-effect-free, regardless of which function is used.
 
 $$\text{ConnectBlock}(b = (h, txs), us, \text{height}) = \begin{cases}
 (\text{invalid}, us) & \text{if } \neg\text{ValidBlockHeader}(h) \\
