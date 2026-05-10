@@ -244,6 +244,8 @@ $T_{future} = 7200$ (maximum allowed block time in future, 2 hours, see [Block V
 
 ### 5.1 Transaction Validation
 
+*Intuition.* Validating a transaction is not one monolithic predicate. Consensus first enforces **syntax and local bounds** (non-empty inputs and outputs, sensible values, no duplicate spends *within* the same transaction, and coinbase vs non-coinbase shape). Only then does it relate the transaction to the **current UTXO set** and **chain height**: non-coinbase inputs must spend coins that exist and cover the outputs (the fee is the remainder), and **script execution** (see [§5.2](#52-script-execution)) finally authorizes each spend. Failures at an earlier layer short-circuit later checks. The same bytecode can be valid or invalid depending on flags, height, and sighash mode; the formal presentation below factors that into named functions so implementations can match the reference ordering.
+
 **CheckTransaction**: $\mathcal{TX} \rightarrow \{\text{valid}, \text{invalid}\}$
 
 A transaction $tx = (v, ins, outs, lt)$ is valid if and only if:
@@ -790,6 +792,8 @@ $$\text{GetBlockScriptFlags}(h_b, tx, w, h, n) = \begin{cases}
 Where $h_b = \text{hash}(b)$ is the block hash. Mainnet has 2 exceptions (BIP16, Taproot); testnet has 1 (BIP16). See [§2.2.1](#221-networks-and-parameters).
 
 ### 5.3 Block Validation
+
+*Intuition.* A block is accepted only if its **header** satisfies proof-of-work, version, and time rules relative to chain context ([§5.3.1](#531-header-validation), detailed with PoW in [§7](#7-proof-of-work)) and its **body** applies cleanly to the UTXO set at the connecting height. Concretely, transactions are checked in order: each must pass structural checks and input/value rules against the **evolving** UTXO set after prior transactions in the same block; the **first** transaction is the coinbase, whose outputs are capped by block subsidy plus the fees aggregated from non-coinbase transactions. Separating header checks from Merkle/consensus transaction checks reflects what nodes can validate locally versus what binds the ordered tx list to `merkle_root` (enforced inside connect logic rather than inside the header predicate alone).
 
 **ConnectBlock**: $\mathcal{B} \times \mathcal{US} \times \mathbb{N} \rightarrow \{\text{valid}, \text{invalid}\} \times \mathcal{US}$
 
@@ -2422,6 +2426,8 @@ Further P2P lifecycle and dispatch details appear with [§10.3](./ARCHITECTURE.m
 ## 11. Advanced Features
 
 ### 11.1 Segregated Witness (SegWit)
+
+*Intuition.* SegWit changes **what counts toward block limits** without breaking old serialization for `txid`. Signature and witness material is pulled into a parallel **witness** attachment; **`txid`** still hashes the legacy-encoded body (so layered systems that depended on stable `txid` keep working), while **`wtxid`** includes the witness and drives the witness Merkle tree. **Weight** replaces naive byte size so large witnesses pay more under the limit, but the legacy 1 MB “block size” framing is superseded by the weight cap. Consensus also requires a **coinbase witness commitment** linking the block’s witness transaction Merkle root to the header-derived chain structure, so miners cannot silently omit or swap witness data compatible with the same `txid` set.
 
 **Witness Data**: $\mathcal{W} = \mathbb{S}^*$ (stack of witness elements)
 
