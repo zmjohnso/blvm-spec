@@ -1594,6 +1594,33 @@ After BIP54 activation, the coinbase transaction must have $\text{lockTime} = he
 
 **References**: [BIP 54](https://bips.dev/54/), Bitcoin Inquisition PR #99.
 
+**IsBip54ActiveAt**: $\mathbb{N} \times \text{Network} \times \mathbb{N}^? \rightarrow \{\text{true}, \text{false}\}$
+
+Returns `true` iff block at `height` is at or past the BIP54 activation threshold, taking an optional caller-supplied override (e.g. from version-bits signalling) over the per-network constant.
+
+**Properties**:
+- Boolean result: $\text{result} \in \{\text{true}, \text{false}\}$
+- Monotone: $h_1 \leq h_2 \implies \text{result}(h_1, n, ovr) = \text{true} \implies \text{result}(h_2, n, ovr) = \text{true}$
+- Activation at threshold: $\text{result}(height, n, \text{Some}(a)) = \text{true} \iff height \geq a$
+
+**IsBip54Active**: $\mathbb{N} \times \text{Network} \rightarrow \{\text{true}, \text{false}\}$
+
+Convenience wrapper over `IsBip54ActiveAt` with no override (uses per-network constant).
+
+**Properties**:
+- Boolean result: $\text{result} \in \{\text{true}, \text{false}\}$
+- Consistent with override form: $\text{result}(height, n) = \text{IsBip54ActiveAt}(height, n, \text{None})$
+
+**CheckBip54Coinbase**: $\mathcal{TX} \times \mathbb{N} \rightarrow \{\text{true}, \text{false}\}$
+
+After BIP54 activation, the coinbase transaction must satisfy both the nLockTime and nSequence constraints.
+
+**Properties**:
+- Boolean result: $\text{result} \in \{\text{true}, \text{false}\}$
+- LockTime necessary: $\text{result} = \text{true} \implies coinbase.\text{lockTime} = height - 13$
+- Sequence necessary: $\text{result} = \text{true} \implies coinbase.\text{inputs}[0].\text{sequence} \neq 0\text{xffffffff}$
+- Non-empty inputs: $\text{result} = \text{true} \implies |coinbase.\text{inputs}| > 0$
+
 ---
 
 ### 5.5 Sequence Locks (BIP68)
@@ -1875,24 +1902,25 @@ $$\forall b = (h, txs) \in \mathcal{B}: \sum_{tx \in txs} \text{IsCoinbase}(tx) 
 
 ### 6.5 Fee Market
 
-**Transaction Fee**: $\mathcal{TX} \times \mathcal{US} \rightarrow \mathbb{Z}$
+**CalculateFee**: $\mathcal{TX} \times \mathcal{US} \rightarrow \mathbb{Z}$
+
+The fee is the difference between total input value and total output value. Coinbase transactions have fee zero by definition.
 
 **Properties**:
-- Fee formula: $\text{Fee}(tx, us) = \sum_{i \in tx.\text{inputs}} us(i.\text{prevout}).\text{value} - \sum_{o \in tx.\text{outputs}} o.\text{value}$
-- Coinbase fee: $\text{IsCoinbase}(tx) = \text{true} \implies \text{Fee}(tx, us) = 0$
-- Non-negative fee: $\text{Fee}(tx, us) \geq 0$ for valid transactions (inputs ≥ outputs)
-- Value conservation: $\text{Fee}(tx, us) \geq 0 \implies \sum_{i \in tx.\text{inputs}} us(i.\text{prevout}).\text{value} = \sum_{o \in tx.\text{outputs}} o.\text{value} + \text{Fee}(tx, us)$
-- Deterministic: $\text{Fee}(tx_1, us_1) = \text{Fee}(tx_2, us_2) \iff tx_1 = tx_2 \land us_1 = us_2$
+- Fee formula: $\text{result} = \sum_{i \in tx.\text{inputs}} us(i.\text{prevout}).\text{value} - \sum_{o \in tx.\text{outputs}} o.\text{value}$
+- Coinbase fee: $\text{IsCoinbase}(tx) = \text{true} \implies \text{result} = 0$
+- Non-negative fee: $result \geq 0$ for valid transactions (inputs ≥ outputs)
+- Deterministic: $result(tx_1, us_1) = result(tx_2, us_2) \iff tx_1 = tx_2 \land us_1 = us_2$
 
 $$\text{Fee}(tx, us) = \sum_{i \in tx.inputs} us(i.prevout).value - \sum_{o \in tx.outputs} o.value$$
 
 **Fee Rate**: $\mathcal{TX} \times \mathcal{US} \rightarrow \mathbb{Q}$
 
 **Properties**:
-- Fee rate formula: $\text{FeeRate}(tx, us) = \frac{\text{Fee}(tx, us)}{\text{Weight}(tx)}$
-- Non-negative rate: $\text{FeeRate}(tx, us) \geq 0$ for valid transactions
-- Zero fee rate: $\text{IsCoinbase}(tx) = \text{true} \implies \text{FeeRate}(tx, us) = 0$
-- Deterministic: $\text{FeeRate}(tx_1, us_1) = \text{FeeRate}(tx_2, us_2) \iff tx_1 = tx_2 \land us_1 = us_2$
+- Fee rate formula: $\text{result} = \frac{\text{Fee}(tx, us)}{\text{Weight}(tx)}$
+- Non-negative rate: $\text{result} \geq 0$ for valid transactions
+- Zero fee rate: $\text{IsCoinbase}(tx) = \text{true} \implies \text{result} = 0$
+- Deterministic: $\text{result}(tx_1, us_1) = \text{result}(tx_2, us_2) \iff tx_1 = tx_2 \land us_1 = us_2$
 
 $$\text{FeeRate}(tx, us) = \frac{\text{Fee}(tx, us)}{\text{Weight}(tx)}$$
 

@@ -85,6 +85,20 @@ $$\text{BestChain} = \arg\max_{chain} \sum_{block \in chain} \text{Work}(block)$
 2. Connect blocks from new chain
 3. Update UTXO set accordingly
 
+**ShouldReorganize**: $\mathcal{B} \times \mathcal{B} \rightarrow \{\text{true}, \text{false}\}$
+
+Returns `true` iff the candidate chain has strictly more cumulative proof-of-work than the current tip.
+
+**Properties**:
+- Boolean result: $result \in \{true, false\}$
+- Deterministic: $result(c_1, b_1) = result(c_2, b_2) \iff c_1 = c_2 \land b_1 = b_2$
+
+**CalculateChainWork**: $\mathcal{B} \rightarrow \mathbb{N}$
+
+**Properties**:
+- Non-negative work: $result \geq 0$
+- Deterministic: $result(b_1) = result(b_2) \iff b_1 = b_2$
+
 #### 11.3.1 Undo Log Pattern
 
 Chain reorganization requires disconnecting blocks from the current chain and connecting blocks from the new chain. To efficiently reverse the effects of `ConnectBlock`, we use an undo log pattern that records all UTXO set changes made by a block.
@@ -103,9 +117,8 @@ A block undo log contains all undo entries for a block, stored in reverse order 
 **DisconnectBlock**: $\mathcal{B} \times \mathcal{UL} \times \mathcal{US} \rightarrow \mathcal{US}$
 
 **Properties**:
-- Undo correctness: $\text{DisconnectBlock}(b, ul, us) = us' \implies$ UTXO set $us'$ reflects state before block $b$ was connected
-- Idempotency: $\text{DisconnectBlock}(b, ul, \text{ConnectBlock}(b, us, h)) = us$ (perfect inverse)
-- Undo log length: $|\text{DisconnectBlock}(b, ul, us)| = |us| - |ul|$ (undo log entries match block changes)
+- Boolean result: $result \in \{valid, invalid\}$
+- Deterministic: $result(b_1, ul_1, us_1) = result(b_2, ul_2, us_2) \iff b_1 = b_2 \land ul_1 = ul_2 \land us_1 = us_2$
 
 For block $b$, undo log $ul$, and UTXO set $us$:
 
