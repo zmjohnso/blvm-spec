@@ -2468,6 +2468,23 @@ $$\text{WitnessRoot} = \text{ComputeMerkleRoot}(\{\text{wtxid}(tx_i) : i \in [0,
 **Weight Calculation** (BIP141):  
 $$\text{Weight}(tx) = 3 \times |\text{Serialize}(tx \setminus witness)| + |\text{Serialize}(tx)|$$
 
+**HashWitness**: $\mathcal{W} \rightarrow \mathbb{H}$
+
+Hashes witness data to a 32-byte digest for inclusion in the witness Merkle tree.
+
+**Properties**:
+- Hash output: produces 32-byte hash for comparison
+- Deterministic: $result(w_1) = result(w_2) \iff w_1 = w_2$
+
+**CountWitnessSigOps**: $\mathcal{TX} \times \mathcal{W}^* \times \mathcal{US} \times \mathbb{N} \rightarrow \mathbb{N}$
+
+Counts witness-committed signature operations per BIP141/BIP143.
+
+**Properties**:
+- Non-negative: $result \geq 0$
+- Coinbase zero: $\text{IsCoinbase}(tx) = \text{true} \implies result = 0$
+- Deterministic: $result(tx_1, w_1, us_1, f) = result(tx_2, w_2, us_2, f) \iff tx_1 = tx_2 \land w_1 = w_2 \land us_1 = us_2$
+
 #### 11.1.1 Weight and Size Calculations
 
 **CalculateTransactionWeight**: $\mathcal{TX} \times \mathcal{W}^? \rightarrow \mathbb{N}$
@@ -2622,9 +2639,10 @@ $$\text{ValidateWitnessProgramLength}(p, v) = \begin{cases}
 $$\text{ComputeWitnessMerkleRoot}(b, w_1, \ldots, w_n) = \text{ComputeMerkleRoot}(\{L_0, L_1, \ldots, L_{|b.\text{transactions}|-1}\})$$
 
 **Properties**:
-- Root length: the result is a 32-byte hash.
-- Block requirement: $|b.transactions| > 0$.
-- **CVE-2012-2459**: $\text{ComputeMerkleRoot}$ must apply the odd-duplicate and duplicate-pair rejection rules in [§8.4.1](#841-computemerkleroot) (ComputeMerkleRoot).
+- Hash output: produces 32-byte hash for comparison
+- Non-empty block: $|b.\text{transactions}| > 0$ (requires at least one transaction)
+- Deterministic: $\text{ComputeWitnessMerkleRoot}(b_1, w_1) = \text{ComputeWitnessMerkleRoot}(b_2, w_2) \iff b_1 = b_2 \land w_1 = w_2$
+- CVE-2012-2459 guard: validates template hash matches expected value (odd-duplicate rejection per §8.4.1)
 
 #### 11.1.5 Witness Commitment Validation
 
@@ -2639,8 +2657,9 @@ Let $c = \text{SHA256d}(r \,\parallel\, n)$ (64-byte preimage). A valid witness 
 **OP_RETURN format** (BIP141): `OP_RETURN` `0x24` `0xaa21a9ed` $\parallel\, c$ (total push 36 bytes after opcode: 4-byte magic + 32-byte $c$).
 
 **Properties**:
-- Coinbase requirement: only defined for $\text{IsCoinbase}(tx)$.
-- If no commitment output exists, validation passes for pre-SegWit-style coinbases; if a commitment output exists, its 32-byte payload must equal $c$.
+- Boolean result: $result \in \{true, false\}$
+- Coinbase only: $\text{IsCoinbase}(tx) = \text{true}$ is required
+- Deterministic: $result(tx_1, r_1, w_1) = result(tx_2, r_2, w_2) \iff tx_1 = tx_2 \land r_1 = r_2 \land w_1 = w_2$
 
 $$\text{ValidateWitnessCommitment}(tx, r, w_{cb}) = \text{true} \iff \neg \exists \text{ commitment output} \lor \exists o \in tx.\text{outputs} : \text{ExtractCommitment}(o.\text{scriptPubkey}) = c$$
 
@@ -2759,6 +2778,15 @@ $$\forall tx \in \mathcal{TX}, i \in \mathbb{N} : \text{IsP2TR}(tx.\text{outputs
 $$\text{OutputKey} = \text{InternalPubKey} + \text{TaprootTweak}(\text{MerkleRoot}) \times G$$
 
 **Script Path**: Alternative spending path using merkle proof
+
+**ValidateTaprootWitnessStructure**: $\mathcal{W} \times \{\text{true}, \text{false}\} \rightarrow \{\text{true}, \text{false}\}$
+
+Checks that a Taproot spend's witness stack is well-formed: key-path spends require exactly one 64-byte Schnorr signature; script-path spends require at least a script and a control block.
+
+**Properties**:
+- Boolean result: $result \in \{true, false\}$
+- Empty witness fails: $|\mathcal{W}| = 0 \implies result = \text{false}$
+- Deterministic: $result(w_1, p_1) = result(w_2, p_2) \iff w_1 = w_2 \land p_1 = p_2$
 
 #### 11.2.1 Taproot Script Validation
 
@@ -3147,6 +3175,11 @@ Constructs a valid coinbase transaction for block at height $h$ with total fees 
 ### 12.4 Block Template Interface
 
 **BlockTemplate**: Interface for mining software
+
+**Properties**:
+- Coinbase first: returns a block with at least one transaction (coinbase must be first)
+- Deterministic structure: Block structure follows deterministic rules (coinbase first, then mempool transactions)
+- Non-empty: $result \in \{valid, invalid\}$
 
 **Required Methods**:
 - `getBlockHeader()`: Return block header for hashing
